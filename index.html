@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>My Fitness Routine</title>
+    <!-- PDF Generation Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --surface-color: #1e1e1e;
+            --text-color: #ffffff;
+            --text-muted: #aaaaaa;
+            --primary-color: #00d2ff;
+            --primary-dark: #00a3cc;
+            --danger: #ff4444;
+            --danger-dark: #cc0000;
+            --success: #00C851;
+            --warning: #ff9800;
+        }
+        .light-theme {
+            --bg-color: #f5f5f5;
+            --surface-color: #ffffff;
+            --text-color: #121212;
+            --text-muted: #666666;
+            --primary-color: #007bff;
+            --primary-dark: #0056b3;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, Roboto, sans-serif; }
+        body { background-color: var(--bg-color); color: var(--text-color); transition: background 0.3s; padding-bottom: 80px; }
+        
+        /* Navigation & Header */
+        header { padding: 20px; display: flex; justify-content: space-between; align-items: center; background-color: var(--surface-color); border-bottom: 1px solid #333; }
+        .theme-toggle { background: none; border: none; color: var(--primary-color); font-size: 24px; }
+        
+        /* Views */
+        .view { display: none; padding: 20px; }
+        .view.active { display: block; }
+        
+        /* Big Buttons */
+        .go-btn-container { display: flex; justify-content: center; margin-top: 40px; }
+        .go-btn { 
+            width: 220px; height: 220px; border-radius: 50%; background: linear-gradient(135deg, var(--success), #007E33);
+            color: white; font-size: 32px; font-weight: bold; border: none; box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+            display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer;
+        }
+        .go-btn span { font-size: 16px; margin-top: 10px; font-weight: normal; }
+        .go-btn:active { transform: scale(0.95); }
+
+        .leave-btn {
+            width: 100%; padding: 20px; border-radius: 12px; border: none; 
+            background: linear-gradient(135deg, var(--danger), var(--danger-dark)); 
+            color: white; font-size: 24px; font-weight: bold; margin-top: 20px; cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .leave-btn:active { transform: scale(0.98); }
+
+        /* Forms & Inputs */
+        .card { background-color: var(--surface-color); padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h2, h3 { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; color: var(--text-muted); }
+        select, input[type="number"], input[type="text"] { 
+            width: 100%; padding: 15px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #444; 
+            background-color: var(--bg-color); color: var(--text-color); font-size: 16px; 
+        }
+        
+        /* Optgroup styling for dropdowns */
+        optgroup { color: var(--text-muted); font-weight: bold; font-style: normal; }
+        option { color: var(--text-color); }
+
+        button.action-btn { width: 100%; padding: 15px; border-radius: 8px; border: none; background-color: var(--primary-color); color: white; font-size: 18px; font-weight: bold; margin-bottom: 10px; }
+        button.secondary-btn { background-color: #555; color: white; font-size: 16px; font-weight: normal; }
+        
+        /* Bottom Nav */
+        nav.bottom-nav { position: fixed; bottom: 0; width: 100%; display: flex; background-color: var(--surface-color); border-top: 1px solid #333; }
+        nav.bottom-nav button { flex: 1; padding: 15px; background: none; border: none; color: var(--text-muted); font-size: 14px; border-right: 1px solid #333; }
+        nav.bottom-nav button.active { color: var(--primary-color); font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1 id="header-title">My Fitness</h1>
+        <button class="theme-toggle" onclick="toggleTheme()">🌓</button>
+    </header>
+
+    <!-- HOME / WORKOUT VIEW -->
+    <div id="view-home" class="view active">
+        <div class="card" style="text-align: center;">
+            <p id="split-display">Calculating today's routine...</p>
+        </div>
+        <div class="go-btn-container">
+            <button class="go-btn" onclick="enterGym()">
+                ENTER GYM
+                <span>Start Session Timer</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- LOGGING VIEW -->
+    <div id="view-log" class="view">
+        <div class="card" style="text-align: center; border: 1px solid var(--primary-color);">
+            <h3 style="margin:0; color: var(--primary-color);" id="session-status">Session Active</h3>
+            <p style="font-size: 12px; color: var(--text-muted);">Entered gym at: <span id="entry-time-display">--:--</span></p>
+        </div>
+
+        <div class="card">
+            <h3>1. Cardio Warmup</h3>
+            <p style="font-size: 12px; color: var(--primary-color); margin-bottom: 10px;" id="cardio-tip">Beta-Blocker Tip: Use the Talk Test, don't rely on heart rate monitors.</p>
+            <select id="cardio-machine">
+                <option value="Treadmill Walking">Treadmill Walking</option>
+                <option value="Elliptical">Elliptical</option>
+            </select>
+            <label>Minutes:</label>
+            <select id="cardio-minutes">
+                <option value="5">5 Mins (Warmup)</option>
+                <option value="10">10 Mins</option>
+                <option value="15">15 Mins</option>
+                <option value="30">30 Mins (Active Recovery)</option>
+                <option value="40">40 Mins (Active Recovery)</option>
+            </select>
+            <div id="interval-toggle-container">
+                <label><input type="checkbox" id="do-intervals"> Do Intervals (2min base / 1min high resistance)</label>
+            </div>
+            <button class="action-btn" onclick="logExercise('cardio')">Log Cardio</button>
+        </div>
+
+        <div class="card">
+            <h3>2. Strength Training</h3>
+            <select id="strength-machine" onchange="toggleCustomMachine()"></select>
+            <input type="text" id="custom-machine" placeholder="Custom Exercise Name" style="display:none;">
+            
+            <div style="display:flex; gap: 10px;">
+                <div style="flex:1;">
+                    <label>Sets</label>
+                    <select id="sets"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select>
+                </div>
+                <div style="flex:1;">
+                    <label>Reps</label>
+                    <select id="reps"><option>8</option><option>10</option><option selected>12</option><option>15</option><option>20</option></select>
+                </div>
+            </div>
+            <label>Weight (kg) - Leave blank for bodyweight</label>
+            <input type="number" id="weight" placeholder="e.g. 40">
+            <button class="action-btn" onclick="logExercise('strength')">Log Set</button>
+        </div>
+        
+        <!-- UNDO LAST WORKOUT BUTTON -->
+        <button class="action-btn secondary-btn" style="margin-bottom: 20px; background-color: var(--danger);" onclick="undoLastEntry('workouts')">↺ Undo Last Logged Set/Cardio</button>
+
+        <button class="leave-btn" onclick="leaveGym()">LEAVE GYM<br><span style="font-size: 14px; font-weight: normal;">Stop Timer & Save Session</span></button>
+    </div>
+
+    <!-- DIET & WEIGHT VIEW -->
+    <div id="view-diet" class="view">
+        <div class="card">
+            <h2>Log Body Weight</h2>
+            <input type="number" id="body-weight" placeholder="Current weight in kg (e.g. 108.5)">
+            <button class="action-btn" onclick="logBodyWeight()">Save Weight</button>
+            <button class="action-btn secondary-btn" style="background-color: var(--danger);" onclick="undoLastEntry('weightLogs')">↺ Undo Last Weight Entry</button>
+        </div>
+        <div class="card">
+            <h2>Log Meal (Max 3/Day)</h2>
+            <select id="meal-type">
+                <option value="Breakfast">Breakfast</option>
+                <option value="Lunch">Lunch</option>
+                <option value="Dinner">Dinner</option>
+            </select>
+            <select id="meal-portion">
+                <option value="Snack">Small Snack</option>
+                <option value="Half Plate">Half Plate</option>
+                <option value="Full Plate">Full Plate</option>
+            </select>
+            <input type="text" id="meal-desc" placeholder="Brief description (Optional)">
+            <button class="action-btn" onclick="logMeal()">Log Meal</button>
+            <button class="action-btn secondary-btn" style="background-color: var(--danger);" onclick="undoLastEntry('mealLogs')">↺ Undo Last Meal Entry</button>
+        </div>
+    </div>
+
+    <!-- SETTINGS / DATA VIEW -->
+    <div id="view-settings" class="view">
+        <div class="card">
+            <h2>Data Management</h2>
+            <p style="font-size: 12px; margin-bottom: 10px;">App will auto-backup to JSON once per day when opened.</p>
+            <button class="action-btn" onclick="exportBackup(false)">Manual Backup (JSON)</button>
+            <br><br>
+            <label>Restore Backup (JSON)</label>
+            <input type="file" id="import-file" accept=".json" onchange="importBackup(event)">
+        </div>
+        <div class="card">
+            <h2>Generate Report</h2>
+            <button class="action-btn secondary-btn" onclick="generatePDF()">Download PDF Report</button>
+        </div>
+    </div>
+
+    <nav class="bottom-nav">
+        <button id="nav-home" class="active" onclick="switchTab('home')">Workout</button>
+        <button id="nav-diet" onclick="switchTab('diet')">Diet & Weight</button>
+        <button id="nav-settings" onclick="switchTab('settings')">Settings</button>
+    </nav>
+
+    <script>
+        // --- 1. THEME & UI LOGIC ---
+        function toggleTheme() {
+            document.body.classList.toggle('light-theme');
+            localStorage.setItem('theme', document.body.classList.contains('light-theme') ? 'light' : 'dark');
+        }
+        if(localStorage.getItem('theme') === 'light') document.body.classList.add('light-theme');
+
+        function switchTab(tab) {
+            let targetView = tab;
+            if (tab === 'home') {
+                if (localStorage.getItem('sessionStart')) targetView = 'log';
+                else initDashboard(); 
+            }
+
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.querySelectorAll('.bottom-nav button').forEach(b => b.classList.remove('active'));
+            
+            document.getElementById(`view-${targetView}`).classList.add('active');
+            let navId = (tab === 'log' || tab === 'home') ? 'nav-home' : `nav-${tab}`;
+            document.getElementById(navId).classList.add('active');
+        }
+
+        function toggleCustomMachine() {
+            const val = document.getElementById('strength-machine').value;
+            document.getElementById('custom-machine').style.display = (val === 'Custom') ? 'block' : 'none';
+        }
+
+        // --- 2. INDEXEDDB DATABASE SETUP ---
+        let db;
+        const request = indexedDB.open("FitnessDB", 2);
+        request.onupgradeneeded = function(e) {
+            db = e.target.result;
+            if(!db.objectStoreNames.contains('workouts')) db.createObjectStore('workouts', { keyPath: 'id', autoIncrement: true });
+            if(!db.objectStoreNames.contains('weightLogs')) db.createObjectStore('weightLogs', { keyPath: 'id', autoIncrement: true });
+            if(!db.objectStoreNames.contains('mealLogs')) db.createObjectStore('mealLogs', { keyPath: 'id', autoIncrement: true });
+            if(!db.objectStoreNames.contains('sessions')) db.createObjectStore('sessions', { keyPath: 'id', autoIncrement: true });
+        };
+        request.onsuccess = function(e) { 
+            db = e.target.result; 
+            initDashboard(); 
+            autoBackupCheck();
+            checkActiveSession(); 
+        };
+        request.onerror = function(e) { alert("Database Error: " + e.target.error); };
+
+        function saveToDB(storeName, data) {
+            data.date = new Date().toISOString();
+            const tx = db.transaction(storeName, "readwrite");
+            tx.objectStore(storeName).add(data);
+            tx.oncomplete = () => { if(storeName !== 'sessions') alert("Saved successfully!"); };
+        }
+
+        async function getAllFromDB(storeName) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, "readonly");
+                const req = tx.objectStore(storeName).getAll();
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        function undoLastEntry(storeName) {
+            const tx = db.transaction(storeName, "readwrite");
+            const store = tx.objectStore(storeName);
+            const req = store.openCursor(null, 'prev'); 
+            
+            req.onsuccess = function(e) {
+                const cursor = e.target.result;
+                if (cursor) {
+                    let confirmMsg = "Are you sure you want to delete the last entry?";
+                    
+                    if (storeName === 'workouts') {
+                        if (cursor.value.type === 'cardio') confirmMsg = `Delete last Cardio log: ${cursor.value.machine}?`;
+                        else confirmMsg = `Delete last Set: ${cursor.value.exercise} (${cursor.value.sets}x${cursor.value.reps})?`;
+                    } else if (storeName === 'weightLogs') {
+                        confirmMsg = `Delete last logged weight: ${cursor.value.weight} kg?`;
+                    } else if (storeName === 'mealLogs') {
+                        confirmMsg = `Delete last logged meal: ${cursor.value.meal} (${cursor.value.portion})?`;
+                    }
+
+                    if (confirm(confirmMsg)) {
+                        cursor.delete().onsuccess = () => {
+                            alert("Entry successfully deleted.");
+                            if(storeName === 'weightLogs') initDashboard(); 
+                        };
+                    }
+                } else {
+                    alert("No entries found in this category to delete.");
+                }
+            };
+        }
+
+        // --- 3. WORKOUT ENGINE & DROPDOWN LOGIC ---
+        const splits = {
+            1: { name: "Day 1: Upper Body Machines", exercises: ["Chest Press Machine", "Seated Cable Row", "Lat Pulldown Machine", "Shoulder Press Machine"] },
+            2: { name: "Day 2: Lower Body & Core", exercises: ["Leg Press Machine", "Seated Leg Curl", "Leg Extension", "Floor Crunches / Planks"] },
+            3: { name: "Day 3: Active Recovery (Cardio Only)", exercises: ["Floor Crunches / Planks"] }
+        };
+
+        const masterMachineList = [
+            "Chest Press Machine", "Seated Cable Row", "Lat Pulldown Machine", "Shoulder Press Machine",
+            "Leg Press Machine", "Seated Leg Curl", "Leg Extension", "Floor Crunches / Planks"
+        ];
+
+        function getTodaySplitNumber() {
+            const start = new Date(new Date().getFullYear(), 0, 0);
+            const diff = new Date() - start;
+            return (Math.floor(diff / (1000 * 60 * 60 * 24)) % 3) + 1; 
+        }
+
+        async function initDashboard() {
+            const splitNum = getTodaySplitNumber();
+            document.getElementById('split-display').innerHTML = `<strong>Today's Plan:</strong><br>${splits[splitNum].name}`;
+            
+            const weights = await getAllFromDB('weightLogs');
+            let latestWeight = 110; 
+            if (weights.length > 0) latestWeight = weights[weights.length - 1].weight;
+            
+            const cardioSelect = document.getElementById('cardio-machine');
+            if (latestWeight < 100 && !cardioSelect.innerHTML.includes("Stairmaster")) {
+                cardioSelect.innerHTML += `<option value="Stairmaster">Stairmaster (Unlocked!)</option>`;
+            }
+
+            const strengthSelect = document.getElementById('strength-machine');
+            const recommendedForToday = splits[splitNum].exercises;
+            const otherMachines = masterMachineList.filter(ex => !recommendedForToday.includes(ex));
+            
+            let dropdownHTML = `<optgroup label="Recommended for Today">`;
+            recommendedForToday.forEach(ex => dropdownHTML += `<option value="${ex}" style="color: var(--warning); font-weight: bold;">🔸 ${ex}</option>`);
+            dropdownHTML += `</optgroup><optgroup label="All Other Machines">`;
+            otherMachines.forEach(ex => dropdownHTML += `<option value="${ex}">${ex}</option>`);
+            dropdownHTML += `</optgroup><option value="Custom">Custom</option>`;
+            
+            strengthSelect.innerHTML = dropdownHTML;
+            toggleCustomMachine();
+        }
+
+        function checkActiveSession() {
+            const activeStart = localStorage.getItem('sessionStart');
+            if (activeStart) {
+                const startTime = new Date(parseInt(activeStart));
+                document.getElementById('entry-time-display').innerText = startTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                switchTab('log');
+            }
+        }
+
+        function enterGym() {
+            const now = Date.now();
+            localStorage.setItem('sessionStart', now);
+            const startTime = new Date(now);
+            document.getElementById('entry-time-display').innerText = startTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            switchTab('log');
+        }
+
+        function logExercise(type) {
+            let data = { type: type };
+            if (type === 'cardio') {
+                data.machine = document.getElementById('cardio-machine').value;
+                data.minutes = document.getElementById('cardio-minutes').value;
+                data.intervals = document.getElementById('do-intervals').checked;
+            } else {
+                const selectVal = document.getElementById('strength-machine').value;
+                data.exercise = selectVal === "Custom" ? document.getElementById('custom-machine').value : selectVal;
+                data.sets = document.getElementById('sets').value;
+                data.reps = document.getElementById('reps').value;
+                data.weight = document.getElementById('weight').value || "Bodyweight";
+            }
+            saveToDB('workouts', data);
+        }
+
+        function leaveGym() {
+            const activeStart = localStorage.getItem('sessionStart');
+            if (!activeStart) return switchTab('home');
+
+            const startMs = parseInt(activeStart);
+            const endMs = Date.now();
+            const diffMinutes = Math.round((endMs - startMs) / 60000);
+
+            saveToDB('sessions', {
+                durationMinutes: diffMinutes,
+                startTime: new Date(startMs).toISOString(),
+                endTime: new Date(endMs).toISOString()
+            });
+
+            localStorage.removeItem('sessionStart');
+            alert(`Workout Complete! You spent ${diffMinutes} minutes at the gym today. Great job!`);
+            switchTab('home');
+        }
+
+        function logBodyWeight() {
+            const w = document.getElementById('body-weight').value;
+            if(!w) return alert("Enter a weight");
+            saveToDB('weightLogs', { weight: parseFloat(w) });
+            initDashboard();
+        }
+
+        function logMeal() {
+            saveToDB('mealLogs', {
+                meal: document.getElementById('meal-type').value,
+                portion: document.getElementById('meal-portion').value,
+                desc: document.getElementById('meal-desc').value
+            });
+        }
+
+        // --- 4. DATA EXPORT / IMPORT (FIXED FOR LOCAL ANDROID FILES) ---
+        async function getFullDatabaseJSON() {
+            const workouts = await getAllFromDB('workouts');
+            const weights = await getAllFromDB('weightLogs');
+            const meals = await getAllFromDB('mealLogs');
+            const sessions = await getAllFromDB('sessions');
+            return JSON.stringify({ workouts, weights, meals, sessions });
+        }
+
+        async function exportBackup(isAuto = false) {
+            try {
+                const json = await getFullDatabaseJSON();
+                const blob = new Blob([json], { type: "application/json" });
+                const dateStr = new Date().toISOString().split('T')[0];
+                const fileName = `FitnessBackup_${dateStr}.json`;
+
+                // Directly force the browser to download the file to the Downloads folder.
+                // This bypasses the Android Share Menu restrictions on local files.
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.style.display = "none";
+                a.href = url;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                if (!isAuto) alert("Backup successfully saved to your device Downloads folder!");
+            } catch (err) {
+                alert("Backup failed: " + err.message);
+            }
+        }
+
+        async function autoBackupCheck() {
+            const today = new Date().toLocaleDateString();
+            const lastBackup = localStorage.getItem('lastBackupDate');
+            if (lastBackup !== today) {
+                setTimeout(() => {
+                    if(confirm("New day! Please save your daily automatic backup file. Proceed?")) {
+                        exportBackup(true).then(() => { localStorage.setItem('lastBackupDate', today); });
+                    }
+                }, 2000); 
+            }
+        }
+
+        function importBackup(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    const tx = db.transaction(['workouts', 'weightLogs', 'mealLogs', 'sessions'], 'readwrite');
+                    tx.objectStore('workouts').clear();
+                    tx.objectStore('weightLogs').clear();
+                    tx.objectStore('mealLogs').clear();
+                    tx.objectStore('sessions').clear();
+                    
+                    if(data.workouts) data.workouts.forEach(item => tx.objectStore('workouts').add(item));
+                    if(data.weights) data.weights.forEach(item => tx.objectStore('weightLogs').add(item));
+                    if(data.meals) data.meals.forEach(item => tx.objectStore('mealLogs').add(item));
+                    if(data.sessions) data.sessions.forEach(item => tx.objectStore('sessions').add(item));
+                    
+                    tx.oncomplete = () => alert("Data restored successfully!");
+                } catch(err) { alert("Error restoring data. Invalid file."); }
+            };
+            reader.readAsText(file);
+        }
+
+        // --- 5. PDF GENERATION ---
+        async function generatePDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            
+            doc.setFontSize(20);
+            doc.text("Fitness Report", 14, 22);
+            
+            const workouts = await getAllFromDB('workouts');
+            const weights = await getAllFromDB('weightLogs');
+            const sessions = await getAllFromDB('sessions');
+            
+            doc.setFontSize(14);
+            doc.text("Gym Time Tracking", 14, 35);
+            const sessionRows = sessions.map(s => [new Date(s.date).toLocaleDateString(), `${s.durationMinutes} minutes`]);
+            
+            doc.autoTable({ startY: 40, head: [['Date', 'Time Spent']], body: sessionRows, theme: 'striped' });
+
+            let finalY = doc.lastAutoTable.finalY || 40;
+            doc.text("Workouts Log", 14, finalY + 15);
+            const workoutRows = workouts.map(w => {
+                const date = new Date(w.date).toLocaleDateString();
+                if(w.type === 'cardio') return [date, w.machine, `${w.minutes} mins`, w.intervals ? 'Intervals' : 'Steady'];
+                return [date, w.exercise, `${w.sets}x${w.reps}`, `${w.weight} kg`];
+            });
+            
+            doc.autoTable({ startY: finalY + 20, head: [['Date', 'Activity', 'Volume', 'Details']], body: workoutRows, theme: 'striped' });
+
+            finalY = doc.lastAutoTable.finalY || finalY + 20;
+            if (finalY > 250) { doc.addPage(); finalY = 20; }
+            doc.text("Body Weight Tracker", 14, finalY + 15);
+            const weightRows = weights.map(w => [new Date(w.date).toLocaleDateString(), `${w.weight} kg`]);
+            
+            doc.autoTable({ startY: finalY + 20, head: [['Date', 'Weight']], body: weightRows, theme: 'striped' });
+
+            doc.save("Fitness_Report.pdf");
+        }
+    </script>
+</body>
+</html>
