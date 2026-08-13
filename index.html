@@ -227,10 +227,8 @@
                 if (localStorage.getItem('sessionStart')) targetView = 'log';
                 else initDashboard(); 
             }
-
             document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
             document.querySelectorAll('.bottom-nav button').forEach(b => b.classList.remove('active'));
-            
             document.getElementById(`view-${targetView}`).classList.add('active');
             let navId = (tab === 'log' || tab === 'home') ? 'nav-home' : `nav-${tab}`;
             document.getElementById(navId).classList.add('active');
@@ -284,12 +282,10 @@
             const tx = db.transaction(storeName, "readwrite");
             const store = tx.objectStore(storeName);
             const req = store.openCursor(null, 'prev'); 
-            
             req.onsuccess = function(e) {
                 const cursor = e.target.result;
                 if (cursor) {
                     let confirmMsg = "Are you sure you want to delete the last entry?";
-                    
                     if (storeName === 'workouts') {
                         if (cursor.value.type === 'cardio') confirmMsg = `Delete last Cardio log: ${cursor.value.machine}?`;
                         else confirmMsg = `Delete last Set: ${cursor.value.exercise} (${cursor.value.sets}x${cursor.value.reps})?`;
@@ -298,16 +294,13 @@
                     } else if (storeName === 'mealLogs') {
                         confirmMsg = `Delete last logged meal: ${cursor.value.meal} (${cursor.value.portion})?`;
                     }
-
                     if (confirm(confirmMsg)) {
                         cursor.delete().onsuccess = () => {
                             alert("Entry successfully deleted.");
                             if(storeName === 'weightLogs') initDashboard(); 
                         };
                     }
-                } else {
-                    alert("No entries found in this category to delete.");
-                }
+                } else alert("No entries found in this category to delete.");
             };
         }
 
@@ -332,7 +325,6 @@
         async function initDashboard() {
             const splitNum = getTodaySplitNumber();
             document.getElementById('split-display').innerHTML = `<strong>Today's Plan:</strong><br>${splits[splitNum].name}`;
-            
             const weights = await getAllFromDB('weightLogs');
             let latestWeight = 110; 
             if (weights.length > 0) latestWeight = weights[weights.length - 1].weight;
@@ -386,7 +378,6 @@
                 
                 const repVal = document.getElementById('reps').value;
                 data.reps = repVal === "Custom" ? document.getElementById('custom-reps').value : repVal;
-                
                 data.sets = document.getElementById('sets').value;
                 data.weight = document.getElementById('weight').value || "Bodyweight";
                 
@@ -398,17 +389,10 @@
         function leaveGym() {
             const activeStart = localStorage.getItem('sessionStart');
             if (!activeStart) return switchTab('home');
-
             const startMs = parseInt(activeStart);
             const endMs = Date.now();
             const diffMinutes = Math.round((endMs - startMs) / 60000);
-
-            saveToDB('sessions', {
-                durationMinutes: diffMinutes,
-                startTime: new Date(startMs).toISOString(),
-                endTime: new Date(endMs).toISOString()
-            });
-
+            saveToDB('sessions', { durationMinutes: diffMinutes, startTime: new Date(startMs).toISOString(), endTime: new Date(endMs).toISOString() });
             localStorage.removeItem('sessionStart');
             alert(`Workout Complete! You spent ${diffMinutes} minutes at the gym today. Great job!`);
             switchTab('home');
@@ -429,7 +413,7 @@
             });
         }
 
-        // --- 4. DATA EXPORT / IMPORT (FIXED FOR LOCAL ANDROID FILES) ---
+        // --- 4. DATA EXPORT / IMPORT ---
         async function getFullDatabaseJSON() {
             const workouts = await getAllFromDB('workouts');
             const weights = await getAllFromDB('weightLogs');
@@ -444,7 +428,6 @@
                 const blob = new Blob([json], { type: "application/json" });
                 const dateStr = new Date().toISOString().split('T')[0];
                 const fileName = `FitnessBackup_${dateStr}.json`;
-
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement("a");
                 a.style.display = "none";
@@ -454,11 +437,8 @@
                 a.click();
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
-                
                 if (!isAuto) alert("Backup successfully saved to your device Downloads folder!");
-            } catch (err) {
-                alert("Backup failed: " + err.message);
-            }
+            } catch (err) { alert("Backup failed: " + err.message); }
         }
 
         async function autoBackupCheck() {
@@ -497,58 +477,127 @@
             reader.readAsText(file);
         }
 
-        // --- 5. PDF GENERATION (UPDATED WITH MEALS & EXACT TIMES) ---
+        // --- 5. PDF GENERATION (SMART PAGE BREAKS ADDED) ---
         async function generatePDF() {
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
             
-            doc.setFontSize(20);
-            doc.text("Fitness Report", 14, 22);
-            
+            // Get all data
             const workouts = await getAllFromDB('workouts');
             const weights = await getAllFromDB('weightLogs');
             const meals = await getAllFromDB('mealLogs');
             const sessions = await getAllFromDB('sessions');
             
-            // Helper function to format Date & Time nicely
-            const formatDateTime = (isoString) => {
-                const dateObj = new Date(isoString);
-                return dateObj.toLocaleDateString() + " " + dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            // Group data by date string (YYYY-MM-DD)
+            const dailyData = {};
+            
+            const processItem = (item, category) => {
+                if (!item.date) return;
+                const d = new Date(item.date);
+                const dateKey = d.toLocaleDateString('en-CA'); 
+                if (!dailyData[dateKey]) {
+                    dailyData[dateKey] = { workouts: [], weights: [], meals: [], sessions: [], dateObj: d };
+                }
+                dailyData[dateKey][category].push(item);
             };
 
-            doc.setFontSize(14);
-            doc.text("Gym Time Tracking", 14, 35);
-            const sessionRows = sessions.map(s => [formatDateTime(s.date), `${s.durationMinutes} minutes`]);
-            
-            doc.autoTable({ startY: 40, head: [['Date / Time', 'Time Spent']], body: sessionRows, theme: 'striped' });
+            workouts.forEach(w => processItem(w, 'workouts'));
+            weights.forEach(w => processItem(w, 'weights'));
+            meals.forEach(m => processItem(m, 'meals'));
+            sessions.forEach(s => processItem(s, 'sessions'));
 
-            let finalY = doc.lastAutoTable.finalY || 40;
-            doc.text("Workouts Log", 14, finalY + 15);
-            const workoutRows = workouts.map(w => {
-                if(w.type === 'cardio') return [formatDateTime(w.date), w.machine, `${w.minutes} mins`, w.intervals ? 'Intervals' : 'Steady'];
-                return [formatDateTime(w.date), w.exercise, `${w.sets}x${w.reps}`, `${w.weight} kg`];
+            // Sort dates from newest to oldest
+            const sortedDates = Object.keys(dailyData).sort((a, b) => dailyData[b].dateObj - dailyData[a].dateObj);
+
+            if (sortedDates.length === 0) {
+                doc.text("No data found to generate report.", 14, 20);
+                doc.save("Fitness_Report.pdf");
+                return;
+            }
+            
+            // Smart page break checker logic
+            const checkPageBreak = (currentY, docRef) => {
+                // If we are getting too close to the bottom (A4 page height is approx 297)
+                if (currentY > 260) {
+                    docRef.addPage();
+                    return 20; // Reset Y coordinate to the top of the new page
+                }
+                return currentY;
+            };
+
+            // Generate a page for each day
+            sortedDates.forEach((dateKey, index) => {
+                if (index > 0) doc.addPage();
+                
+                const data = dailyData[dateKey];
+                const d = data.dateObj;
+                
+                // Format Title
+                const title = d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+                
+                doc.setFontSize(22);
+                doc.setFont("helvetica", "bold");
+                doc.setTextColor(30, 30, 30);
+                doc.text(title, 14, 22);
+
+                doc.setDrawColor(0, 210, 255); 
+                doc.setLineWidth(1.5);
+                doc.line(14, 26, 196, 26);
+                
+                doc.setDrawColor(200, 200, 200); 
+                doc.setLineWidth(0.5);
+                doc.line(14, 27, 196, 27);
+
+                let finalY = 35;
+                const formatTime = (isoString) => new Date(isoString).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                
+                // 1. Gym Timings
+                if (data.sessions.length > 0) {
+                    finalY = checkPageBreak(finalY, doc);
+                    doc.setFontSize(14);
+                    doc.text("Gym Check-in", 14, finalY);
+                    const sessionRows = data.sessions.map(s => [formatTime(s.startTime) + " to " + formatTime(s.endTime), `${s.durationMinutes} minutes`]);
+                    doc.autoTable({ startY: finalY + 5, head: [['Time In/Out', 'Duration']], body: sessionRows, theme: 'grid', headStyles: { fillColor: [0, 163, 204] } });
+                    finalY = doc.lastAutoTable.finalY + 15;
+                }
+
+                // 2. Exercises
+                if (data.workouts.length > 0) {
+                    finalY = checkPageBreak(finalY, doc);
+                    doc.setFontSize(14);
+                    doc.text("Workout Log", 14, finalY);
+                    const workoutRows = data.workouts.map(w => {
+                        if(w.type === 'cardio') return [formatTime(w.date), w.machine, `${w.minutes} mins`, w.intervals ? 'Intervals' : 'Steady'];
+                        return [formatTime(w.date), w.exercise, `${w.sets}x${w.reps}`, `${w.weight} kg`];
+                    });
+                    doc.autoTable({ startY: finalY + 5, head: [['Time', 'Activity', 'Volume', 'Details']], body: workoutRows, theme: 'striped', headStyles: { fillColor: [50, 50, 50] } });
+                    finalY = doc.lastAutoTable.finalY + 15;
+                }
+
+                // 3. Meals
+                if (data.meals.length > 0) {
+                    finalY = checkPageBreak(finalY, doc);
+                    doc.setFontSize(14);
+                    doc.text("Diet & Meals", 14, finalY);
+                    const mealRows = data.meals.map(m => [formatTime(m.date), m.meal, m.portion, m.desc || "-"]);
+                    doc.autoTable({ startY: finalY + 5, head: [['Time', 'Meal Type', 'Portion', 'Notes']], body: mealRows, theme: 'striped', headStyles: { fillColor: [50, 50, 50] } });
+                    finalY = doc.lastAutoTable.finalY + 15;
+                }
+
+                // 4. Body Weight
+                if (data.weights.length > 0) {
+                    finalY = checkPageBreak(finalY, doc);
+                    doc.setFontSize(14);
+                    doc.text("Body Weight", 14, finalY);
+                    const weightRows = data.weights.map(w => [formatTime(w.date), `${w.weight} kg`]);
+                    doc.autoTable({ startY: finalY + 5, head: [['Time', 'Weight']], body: weightRows, theme: 'striped', headStyles: { fillColor: [50, 50, 50] } });
+                    finalY = doc.lastAutoTable.finalY + 15;
+                }
             });
-            
-            doc.autoTable({ startY: finalY + 20, head: [['Date / Time', 'Activity', 'Volume', 'Details']], body: workoutRows, theme: 'striped' });
-
-            finalY = doc.lastAutoTable.finalY || finalY + 20;
-            if (finalY > 250) { doc.addPage(); finalY = 20; }
-            doc.text("Body Weight Tracker", 14, finalY + 15);
-            const weightRows = weights.map(w => [formatDateTime(w.date), `${w.weight} kg`]);
-            
-            doc.autoTable({ startY: finalY + 20, head: [['Date / Time', 'Weight']], body: weightRows, theme: 'striped' });
-
-            finalY = doc.lastAutoTable.finalY || finalY + 20;
-            if (finalY > 250) { doc.addPage(); finalY = 20; }
-            doc.text("Diet & Meals Log", 14, finalY + 15);
-            const mealRows = meals.map(m => [formatDateTime(m.date), m.meal, m.portion, m.desc || "None"]);
-            
-            doc.autoTable({ startY: finalY + 20, head: [['Date / Time', 'Meal Type', 'Portion', 'Notes']], body: mealRows, theme: 'striped' });
 
             doc.save("Fitness_Report.pdf");
         }
     </script>
-    <!-- Keep this at the bottom for WebAPK generation if you use it in the future -->
     <script>
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js').catch(err => console.log('SW registration skipped'));
