@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#121212">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>My Fitness Routine</title>
     <link rel="manifest" href="manifest.json">
     <!-- PDF Generation Libraries -->
@@ -143,7 +143,15 @@
                 </div>
                 <div style="flex:1;">
                     <label>Reps</label>
-                    <select id="reps"><option>8</option><option>10</option><option selected>12</option><option>15</option><option>20</option></select>
+                    <select id="reps" onchange="toggleCustomReps()">
+                        <option>8</option>
+                        <option>10</option>
+                        <option selected>12</option>
+                        <option>15</option>
+                        <option>20</option>
+                        <option value="Custom">Custom</option>
+                    </select>
+                    <input type="number" id="custom-reps" placeholder="Reps" style="display:none;">
                 </div>
             </div>
             <label>Weight (kg) - Leave blank for bodyweight</label>
@@ -231,6 +239,11 @@
         function toggleCustomMachine() {
             const val = document.getElementById('strength-machine').value;
             document.getElementById('custom-machine').style.display = (val === 'Custom') ? 'block' : 'none';
+        }
+
+        function toggleCustomReps() {
+            const val = document.getElementById('reps').value;
+            document.getElementById('custom-reps').style.display = (val === 'Custom') ? 'block' : 'none';
         }
 
         // --- 2. INDEXEDDB DATABASE SETUP ---
@@ -341,6 +354,7 @@
             
             strengthSelect.innerHTML = dropdownHTML;
             toggleCustomMachine();
+            toggleCustomReps();
         }
 
         function checkActiveSession() {
@@ -369,9 +383,14 @@
             } else {
                 const selectVal = document.getElementById('strength-machine').value;
                 data.exercise = selectVal === "Custom" ? document.getElementById('custom-machine').value : selectVal;
+                
+                const repVal = document.getElementById('reps').value;
+                data.reps = repVal === "Custom" ? document.getElementById('custom-reps').value : repVal;
+                
                 data.sets = document.getElementById('sets').value;
-                data.reps = document.getElementById('reps').value;
                 data.weight = document.getElementById('weight').value || "Bodyweight";
+                
+                if (repVal === "Custom" && !data.reps) return alert("Please enter the number of custom reps.");
             }
             saveToDB('workouts', data);
         }
@@ -426,8 +445,6 @@
                 const dateStr = new Date().toISOString().split('T')[0];
                 const fileName = `FitnessBackup_${dateStr}.json`;
 
-                // Directly force the browser to download the file to the Downloads folder.
-                // This bypasses the Android Share Menu restrictions on local files.
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement("a");
                 a.style.display = "none";
@@ -480,7 +497,7 @@
             reader.readAsText(file);
         }
 
-        // --- 5. PDF GENERATION ---
+        // --- 5. PDF GENERATION (UPDATED WITH MEALS & EXACT TIMES) ---
         async function generatePDF() {
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
@@ -490,38 +507,52 @@
             
             const workouts = await getAllFromDB('workouts');
             const weights = await getAllFromDB('weightLogs');
+            const meals = await getAllFromDB('mealLogs');
             const sessions = await getAllFromDB('sessions');
             
+            // Helper function to format Date & Time nicely
+            const formatDateTime = (isoString) => {
+                const dateObj = new Date(isoString);
+                return dateObj.toLocaleDateString() + " " + dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            };
+
             doc.setFontSize(14);
             doc.text("Gym Time Tracking", 14, 35);
-            const sessionRows = sessions.map(s => [new Date(s.date).toLocaleDateString(), `${s.durationMinutes} minutes`]);
+            const sessionRows = sessions.map(s => [formatDateTime(s.date), `${s.durationMinutes} minutes`]);
             
-            doc.autoTable({ startY: 40, head: [['Date', 'Time Spent']], body: sessionRows, theme: 'striped' });
+            doc.autoTable({ startY: 40, head: [['Date / Time', 'Time Spent']], body: sessionRows, theme: 'striped' });
 
             let finalY = doc.lastAutoTable.finalY || 40;
             doc.text("Workouts Log", 14, finalY + 15);
             const workoutRows = workouts.map(w => {
-                const date = new Date(w.date).toLocaleDateString();
-                if(w.type === 'cardio') return [date, w.machine, `${w.minutes} mins`, w.intervals ? 'Intervals' : 'Steady'];
-                return [date, w.exercise, `${w.sets}x${w.reps}`, `${w.weight} kg`];
+                if(w.type === 'cardio') return [formatDateTime(w.date), w.machine, `${w.minutes} mins`, w.intervals ? 'Intervals' : 'Steady'];
+                return [formatDateTime(w.date), w.exercise, `${w.sets}x${w.reps}`, `${w.weight} kg`];
             });
             
-            doc.autoTable({ startY: finalY + 20, head: [['Date', 'Activity', 'Volume', 'Details']], body: workoutRows, theme: 'striped' });
+            doc.autoTable({ startY: finalY + 20, head: [['Date / Time', 'Activity', 'Volume', 'Details']], body: workoutRows, theme: 'striped' });
 
             finalY = doc.lastAutoTable.finalY || finalY + 20;
             if (finalY > 250) { doc.addPage(); finalY = 20; }
             doc.text("Body Weight Tracker", 14, finalY + 15);
-            const weightRows = weights.map(w => [new Date(w.date).toLocaleDateString(), `${w.weight} kg`]);
+            const weightRows = weights.map(w => [formatDateTime(w.date), `${w.weight} kg`]);
             
-            doc.autoTable({ startY: finalY + 20, head: [['Date', 'Weight']], body: weightRows, theme: 'striped' });
+            doc.autoTable({ startY: finalY + 20, head: [['Date / Time', 'Weight']], body: weightRows, theme: 'striped' });
+
+            finalY = doc.lastAutoTable.finalY || finalY + 20;
+            if (finalY > 250) { doc.addPage(); finalY = 20; }
+            doc.text("Diet & Meals Log", 14, finalY + 15);
+            const mealRows = meals.map(m => [formatDateTime(m.date), m.meal, m.portion, m.desc || "None"]);
+            
+            doc.autoTable({ startY: finalY + 20, head: [['Date / Time', 'Meal Type', 'Portion', 'Notes']], body: mealRows, theme: 'striped' });
 
             doc.save("Fitness_Report.pdf");
         }
     </script>
+    <!-- Keep this at the bottom for WebAPK generation if you use it in the future -->
     <script>
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js');
-    }
-</script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').catch(err => console.log('SW registration skipped'));
+        }
+    </script>
 </body>
 </html>
