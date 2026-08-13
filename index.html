@@ -76,12 +76,12 @@
         optgroup { color: var(--text-muted); font-weight: bold; font-style: normal; }
         option { color: var(--text-color); }
 
-        button.action-btn { width: 100%; padding: 15px; border-radius: 8px; border: none; background-color: var(--primary-color); color: white; font-size: 18px; font-weight: bold; margin-bottom: 10px; }
+        button.action-btn { width: 100%; padding: 15px; border-radius: 8px; border: none; background-color: var(--primary-color); color: white; font-size: 18px; font-weight: bold; margin-bottom: 10px; cursor: pointer; }
         button.secondary-btn { background-color: #555; color: white; font-size: 16px; font-weight: normal; }
         
         /* Bottom Nav */
         nav.bottom-nav { position: fixed; bottom: 0; width: 100%; display: flex; background-color: var(--surface-color); border-top: 1px solid #333; }
-        nav.bottom-nav button { flex: 1; padding: 15px; background: none; border: none; color: var(--text-muted); font-size: 14px; border-right: 1px solid #333; }
+        nav.bottom-nav button { flex: 1; padding: 15px; background: none; border: none; color: var(--text-muted); font-size: 14px; border-right: 1px solid #333; cursor: pointer; }
         nav.bottom-nav button.active { color: var(--primary-color); font-weight: bold; }
     </style>
 </head>
@@ -161,7 +161,6 @@
             <button class="action-btn" onclick="logExercise('strength')">Log Set</button>
         </div>
         
-        <!-- UNDO LAST WORKOUT BUTTON -->
         <button class="action-btn secondary-btn" style="margin-bottom: 20px; background-color: var(--danger);" onclick="undoLastEntry('workouts')">↺ Undo Last Logged Set/Cardio</button>
 
         <button class="leave-btn" onclick="leaveGym()">LEAVE GYM<br><span style="font-size: 14px; font-weight: normal;">Stop Timer & Save Session</span></button>
@@ -199,16 +198,20 @@
             <h2>Generate Report</h2>
             <button class="action-btn" onclick="generatePDF()">Download PDF Report</button>
         </div>
+        
         <div class="card">
             <h2>Data Management</h2>
             <p style="font-size: 12px; margin-bottom: 10px;">App will auto-backup to JSON once per day when opened.</p>
             <button class="action-btn secondary-btn" onclick="exportBackup(false)">Manual Backup (JSON)</button>
-            <br><br>
+            
+            <!-- NEW: Email Backup Button -->
+            <button class="action-btn" onclick="emailBackup()" style="margin-top: 10px; background-color: #007bff;">✉️ Email Backup to Max</button>
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 15px;">Downloads file and opens email app. Please attach the downloaded file manually.</p>
+            
             <label>Restore Backup (JSON)</label>
             <input type="file" id="import-file" accept=".json" onchange="importBackup(event)">
         </div>
         
-        <!-- NEW: DELETE DATA BY DATE -->
         <div class="card">
             <h2>Delete Data by Date</h2>
             <p style="font-size: 12px; margin-bottom: 10px; color: var(--danger);">Warning: This will permanently erase all workouts, meals, weights, and sessions for the chosen day.</p>
@@ -314,7 +317,6 @@
             };
         }
 
-        // --- NEW: DELETE DATA BY DATE ---
         function deleteDataByDate() {
             const dateInput = document.getElementById('delete-date-input').value;
             if (!dateInput) return alert("Please select a date first.");
@@ -333,7 +335,6 @@
                 req.onsuccess = function(e) {
                     const cursor = e.target.result;
                     if (cursor) {
-                        // Extract local YYYY-MM-DD from the saved ISO string
                         const d = new Date(cursor.value.date);
                         const yyyy = d.getFullYear();
                         const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -468,7 +469,7 @@
             });
         }
 
-        // --- 4. DATA EXPORT / IMPORT ---
+        // --- 4. DATA EXPORT / IMPORT & EMAIL ---
         async function getFullDatabaseJSON() {
             const workouts = await getAllFromDB('workouts');
             const weights = await getAllFromDB('weightLogs');
@@ -477,12 +478,13 @@
             return JSON.stringify({ workouts, weights, meals, sessions });
         }
 
-        async function exportBackup(isAuto = false) {
+        async function exportBackup(isAuto = false, customFileName = null) {
             try {
                 const json = await getFullDatabaseJSON();
                 const blob = new Blob([json], { type: "application/json" });
                 const dateStr = new Date().toISOString().split('T')[0];
-                const fileName = `FitnessBackup_${dateStr}.json`;
+                const fileName = customFileName || `FitnessBackup_${dateStr}.json`;
+                
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement("a");
                 a.style.display = "none";
@@ -492,8 +494,29 @@
                 a.click();
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
-                if (!isAuto) alert("Backup successfully saved to your device Downloads folder!");
+                if (!isAuto && !customFileName) alert("Backup successfully saved to your device Downloads folder!");
             } catch (err) { alert("Backup failed: " + err.message); }
+        }
+
+        async function emailBackup() {
+            const today = new Date();
+            const dd = String(today.getDate()).padStart(2, '0');
+            const mm = String(today.getMonth() + 1).padStart(2, '0');
+            const yy = String(today.getFullYear()).slice(-2);
+            
+            const fileName = `${dd}-${mm}-${yy} backup.json`;
+            
+            // First, trigger the download with the specific filename
+            await exportBackup(false, fileName);
+            
+            // Then, wait half a second and open the email app
+            setTimeout(() => {
+                const email = "maxspasoy@gmail.com";
+                const subject = encodeURIComponent(`${dd}-${mm}-${yy} Fitness Backup`);
+                const body = encodeURIComponent(`Hello,\n\nThe JSON backup file has been saved to your device's Downloads folder.\n\nPlease tap the paperclip icon in this email app and attach the file named:\n\n${fileName}`);
+                
+                window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
+            }, 500);
         }
 
         async function autoBackupCheck() {
@@ -532,18 +555,16 @@
             reader.readAsText(file);
         }
 
-        // --- 5. PDF GENERATION (SMART PAGE BREAKS ADDED) ---
+        // --- 5. PDF GENERATION ---
         async function generatePDF() {
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
             
-            // Get all data
             const workouts = await getAllFromDB('workouts');
             const weights = await getAllFromDB('weightLogs');
             const meals = await getAllFromDB('mealLogs');
             const sessions = await getAllFromDB('sessions');
             
-            // Group data by date string (YYYY-MM-DD)
             const dailyData = {};
             
             const processItem = (item, category) => {
@@ -561,7 +582,6 @@
             meals.forEach(m => processItem(m, 'meals'));
             sessions.forEach(s => processItem(s, 'sessions'));
 
-            // Sort dates from newest to oldest
             const sortedDates = Object.keys(dailyData).sort((a, b) => dailyData[b].dateObj - dailyData[a].dateObj);
 
             if (sortedDates.length === 0) {
@@ -570,24 +590,20 @@
                 return;
             }
             
-            // Smart page break checker logic
             const checkPageBreak = (currentY, docRef) => {
-                // If we are getting too close to the bottom (A4 page height is approx 297)
                 if (currentY > 260) {
                     docRef.addPage();
-                    return 20; // Reset Y coordinate to the top of the new page
+                    return 20; 
                 }
                 return currentY;
             };
 
-            // Generate a page for each day
             sortedDates.forEach((dateKey, index) => {
                 if (index > 0) doc.addPage();
                 
                 const data = dailyData[dateKey];
                 const d = data.dateObj;
                 
-                // Format Title
                 const title = d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
                 
                 doc.setFontSize(22);
@@ -606,7 +622,6 @@
                 let finalY = 35;
                 const formatTime = (isoString) => new Date(isoString).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                 
-                // 1. Gym Timings
                 if (data.sessions.length > 0) {
                     finalY = checkPageBreak(finalY, doc);
                     doc.setFontSize(14);
@@ -616,7 +631,6 @@
                     finalY = doc.lastAutoTable.finalY + 15;
                 }
 
-                // 2. Exercises
                 if (data.workouts.length > 0) {
                     finalY = checkPageBreak(finalY, doc);
                     doc.setFontSize(14);
@@ -629,7 +643,6 @@
                     finalY = doc.lastAutoTable.finalY + 15;
                 }
 
-                // 3. Meals
                 if (data.meals.length > 0) {
                     finalY = checkPageBreak(finalY, doc);
                     doc.setFontSize(14);
@@ -639,7 +652,6 @@
                     finalY = doc.lastAutoTable.finalY + 15;
                 }
 
-                // 4. Body Weight
                 if (data.weights.length > 0) {
                     finalY = checkPageBreak(finalY, doc);
                     doc.setFontSize(14);
@@ -650,7 +662,6 @@
                 }
             });
 
-            // Create Dynamic Filename: dd-mm-yy Fitness Report.pdf
             const today = new Date();
             const dd = String(today.getDate()).padStart(2, '0');
             const mm = String(today.getMonth() + 1).padStart(2, '0');
