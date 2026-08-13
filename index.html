@@ -166,14 +166,33 @@
         <button class="leave-btn" onclick="leaveGym()">LEAVE GYM<br><span style="font-size: 14px; font-weight: normal;">Stop Timer & Save Session</span></button>
     </div>
 
-    <!-- DIET & WEIGHT VIEW -->
-    <div id="view-diet" class="view">
+    <!-- HEALTH VIEW -->
+    <div id="view-health" class="view">
+        <div class="card">
+            <h2>Log Vitals (BP & Pulse)</h2>
+            <div style="display:flex; gap: 10px;">
+                <div style="flex:1;">
+                    <label>Upper BP (Systolic)</label>
+                    <input type="number" id="bp-upper" placeholder="e.g. 120">
+                </div>
+                <div style="flex:1;">
+                    <label>Lower BP (Diastolic)</label>
+                    <input type="number" id="bp-lower" placeholder="e.g. 80">
+                </div>
+            </div>
+            <label>Heart Rate (Pulse)</label>
+            <input type="number" id="pulse" placeholder="e.g. 72">
+            <button class="action-btn" onclick="logVitals()">Log Vitals</button>
+            <button class="action-btn secondary-btn" style="background-color: var(--danger);" onclick="undoLastEntry('vitalsLogs')">↺ Undo Last Vitals Entry</button>
+        </div>
+
         <div class="card">
             <h2>Log Body Weight</h2>
             <input type="number" id="body-weight" placeholder="Current weight in kg (e.g. 108.5)">
             <button class="action-btn" onclick="logBodyWeight()">Save Weight</button>
             <button class="action-btn secondary-btn" style="background-color: var(--danger);" onclick="undoLastEntry('weightLogs')">↺ Undo Last Weight Entry</button>
         </div>
+        
         <div class="card">
             <h2>Log Meal (Max 3/Day)</h2>
             <select id="meal-type">
@@ -204,7 +223,6 @@
             <p style="font-size: 12px; margin-bottom: 10px;">App will auto-backup to JSON once per day when opened.</p>
             <button class="action-btn secondary-btn" onclick="exportBackup(false)">Manual Backup (JSON)</button>
             
-            <!-- NEW: Email Backup Button -->
             <button class="action-btn" onclick="emailBackup()" style="margin-top: 10px; background-color: #007bff;">✉️ Email Backup to Max</button>
             <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 15px;">Downloads file and opens email app. Please attach the downloaded file manually.</p>
             
@@ -214,7 +232,7 @@
         
         <div class="card">
             <h2>Delete Data by Date</h2>
-            <p style="font-size: 12px; margin-bottom: 10px; color: var(--danger);">Warning: This will permanently erase all workouts, meals, weights, and sessions for the chosen day.</p>
+            <p style="font-size: 12px; margin-bottom: 10px; color: var(--danger);">Warning: This will permanently erase all workouts, meals, weights, vitals, and sessions for the chosen day.</p>
             <input type="date" id="delete-date-input">
             <button class="action-btn secondary-btn" style="background-color: var(--danger);" onclick="deleteDataByDate()">Erase Data for this Date</button>
         </div>
@@ -222,7 +240,7 @@
 
     <nav class="bottom-nav">
         <button id="nav-home" class="active" onclick="switchTab('home')">Workout</button>
-        <button id="nav-diet" onclick="switchTab('diet')">Diet & Weight</button>
+        <button id="nav-health" onclick="switchTab('health')">Health</button>
         <button id="nav-settings" onclick="switchTab('settings')">Settings</button>
     </nav>
 
@@ -259,13 +277,15 @@
 
         // --- 2. INDEXEDDB DATABASE SETUP ---
         let db;
-        const request = indexedDB.open("FitnessDB", 2);
+        // Bumped version to 3 to add vitalsLogs securely
+        const request = indexedDB.open("FitnessDB", 3);
         request.onupgradeneeded = function(e) {
             db = e.target.result;
             if(!db.objectStoreNames.contains('workouts')) db.createObjectStore('workouts', { keyPath: 'id', autoIncrement: true });
             if(!db.objectStoreNames.contains('weightLogs')) db.createObjectStore('weightLogs', { keyPath: 'id', autoIncrement: true });
             if(!db.objectStoreNames.contains('mealLogs')) db.createObjectStore('mealLogs', { keyPath: 'id', autoIncrement: true });
             if(!db.objectStoreNames.contains('sessions')) db.createObjectStore('sessions', { keyPath: 'id', autoIncrement: true });
+            if(!db.objectStoreNames.contains('vitalsLogs')) db.createObjectStore('vitalsLogs', { keyPath: 'id', autoIncrement: true });
         };
         request.onsuccess = function(e) { 
             db = e.target.result; 
@@ -306,6 +326,8 @@
                         confirmMsg = `Delete last logged weight: ${cursor.value.weight} kg?`;
                     } else if (storeName === 'mealLogs') {
                         confirmMsg = `Delete last logged meal: ${cursor.value.meal} (${cursor.value.portion})?`;
+                    } else if (storeName === 'vitalsLogs') {
+                        confirmMsg = `Delete last logged vitals: ${cursor.value.upper}/${cursor.value.lower} mmHg, ${cursor.value.pulse} bpm?`;
                     }
                     if (confirm(confirmMsg)) {
                         cursor.delete().onsuccess = () => {
@@ -321,11 +343,11 @@
             const dateInput = document.getElementById('delete-date-input').value;
             if (!dateInput) return alert("Please select a date first.");
             
-            if (!confirm(`Are you absolutely sure you want to delete ALL data (workouts, meals, weight, sessions) for ${dateInput}? This cannot be undone.`)) {
+            if (!confirm(`Are you absolutely sure you want to delete ALL data (workouts, meals, weight, sessions, and vitals) for ${dateInput}? This cannot be undone.`)) {
                 return;
             }
 
-            const storeNames = ['workouts', 'weightLogs', 'mealLogs', 'sessions'];
+            const storeNames = ['workouts', 'weightLogs', 'mealLogs', 'sessions', 'vitalsLogs'];
             const tx = db.transaction(storeNames, "readwrite");
             let deletedCount = 0;
 
@@ -360,7 +382,7 @@
             };
         }
 
-        // --- 3. WORKOUT ENGINE & DROPDOWN LOGIC ---
+        // --- 3. WORKOUT ENGINE & LOGGING LOGIC ---
         const splits = {
             1: { name: "Day 1: Upper Body Machines", exercises: ["Chest Press Machine", "Seated Cable Row", "Lat Pulldown Machine", "Shoulder Press Machine"] },
             2: { name: "Day 2: Lower Body & Core", exercises: ["Leg Press Machine", "Seated Leg Curl", "Leg Extension", "Floor Crunches / Planks"] },
@@ -468,6 +490,18 @@
                 desc: document.getElementById('meal-desc').value
             });
         }
+        
+        function logVitals() {
+            const upper = document.getElementById('bp-upper').value;
+            const lower = document.getElementById('bp-lower').value;
+            const pulse = document.getElementById('pulse').value;
+            if(!upper || !lower || !pulse) return alert("Please enter Upper BP, Lower BP, and Heart Rate.");
+            saveToDB('vitalsLogs', { upper: parseInt(upper), lower: parseInt(lower), pulse: parseInt(pulse) });
+            // Clear inputs after logging
+            document.getElementById('bp-upper').value = '';
+            document.getElementById('bp-lower').value = '';
+            document.getElementById('pulse').value = '';
+        }
 
         // --- 4. DATA EXPORT / IMPORT & EMAIL ---
         async function getFullDatabaseJSON() {
@@ -475,7 +509,8 @@
             const weights = await getAllFromDB('weightLogs');
             const meals = await getAllFromDB('mealLogs');
             const sessions = await getAllFromDB('sessions');
-            return JSON.stringify({ workouts, weights, meals, sessions });
+            const vitals = await getAllFromDB('vitalsLogs');
+            return JSON.stringify({ workouts, weights, meals, sessions, vitals });
         }
 
         async function exportBackup(isAuto = false, customFileName = null) {
@@ -506,10 +541,8 @@
             
             const fileName = `${dd}-${mm}-${yy} backup.json`;
             
-            // First, trigger the download with the specific filename
             await exportBackup(false, fileName);
             
-            // Then, wait half a second and open the email app
             setTimeout(() => {
                 const email = "maxspasoy@gmail.com";
                 const subject = encodeURIComponent(`${dd}-${mm}-${yy} Fitness Backup`);
@@ -538,16 +571,18 @@
             reader.onload = function(e) {
                 try {
                     const data = JSON.parse(e.target.result);
-                    const tx = db.transaction(['workouts', 'weightLogs', 'mealLogs', 'sessions'], 'readwrite');
+                    const tx = db.transaction(['workouts', 'weightLogs', 'mealLogs', 'sessions', 'vitalsLogs'], 'readwrite');
                     tx.objectStore('workouts').clear();
                     tx.objectStore('weightLogs').clear();
                     tx.objectStore('mealLogs').clear();
                     tx.objectStore('sessions').clear();
+                    tx.objectStore('vitalsLogs').clear();
                     
                     if(data.workouts) data.workouts.forEach(item => tx.objectStore('workouts').add(item));
                     if(data.weights) data.weights.forEach(item => tx.objectStore('weightLogs').add(item));
                     if(data.meals) data.meals.forEach(item => tx.objectStore('mealLogs').add(item));
                     if(data.sessions) data.sessions.forEach(item => tx.objectStore('sessions').add(item));
+                    if(data.vitals) data.vitals.forEach(item => tx.objectStore('vitalsLogs').add(item));
                     
                     tx.oncomplete = () => alert("Data restored successfully!");
                 } catch(err) { alert("Error restoring data. Invalid file."); }
@@ -564,6 +599,7 @@
             const weights = await getAllFromDB('weightLogs');
             const meals = await getAllFromDB('mealLogs');
             const sessions = await getAllFromDB('sessions');
+            const vitals = await getAllFromDB('vitalsLogs');
             
             const dailyData = {};
             
@@ -572,7 +608,7 @@
                 const d = new Date(item.date);
                 const dateKey = d.toLocaleDateString('en-CA'); 
                 if (!dailyData[dateKey]) {
-                    dailyData[dateKey] = { workouts: [], weights: [], meals: [], sessions: [], dateObj: d };
+                    dailyData[dateKey] = { workouts: [], weights: [], meals: [], sessions: [], vitals: [], dateObj: d };
                 }
                 dailyData[dateKey][category].push(item);
             };
@@ -581,6 +617,7 @@
             weights.forEach(w => processItem(w, 'weights'));
             meals.forEach(m => processItem(m, 'meals'));
             sessions.forEach(s => processItem(s, 'sessions'));
+            vitals.forEach(v => processItem(v, 'vitals'));
 
             const sortedDates = Object.keys(dailyData).sort((a, b) => dailyData[b].dateObj - dailyData[a].dateObj);
 
@@ -628,6 +665,15 @@
                     doc.text("Gym Check-in", 14, finalY);
                     const sessionRows = data.sessions.map(s => [formatTime(s.startTime) + " to " + formatTime(s.endTime), `${s.durationMinutes} minutes`]);
                     doc.autoTable({ startY: finalY + 5, head: [['Time In/Out', 'Duration']], body: sessionRows, theme: 'grid', headStyles: { fillColor: [0, 163, 204] } });
+                    finalY = doc.lastAutoTable.finalY + 15;
+                }
+
+                if (data.vitals.length > 0) {
+                    finalY = checkPageBreak(finalY, doc);
+                    doc.setFontSize(14);
+                    doc.text("Vitals (BP & HR)", 14, finalY);
+                    const vitalRows = data.vitals.map(v => [formatTime(v.date), `${v.upper}/${v.lower} mmHg`, `${v.pulse} bpm`]);
+                    doc.autoTable({ startY: finalY + 5, head: [['Time', 'Blood Pressure', 'Heart Rate']], body: vitalRows, theme: 'striped', headStyles: { fillColor: [50, 50, 50] } });
                     finalY = doc.lastAutoTable.finalY + 15;
                 }
 
