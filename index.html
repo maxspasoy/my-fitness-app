@@ -65,10 +65,12 @@
         .card { background-color: var(--surface-color); padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         h2, h3 { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; color: var(--text-muted); }
-        select, input[type="number"], input[type="text"] { 
+        select, input[type="number"], input[type="text"], input[type="date"] { 
             width: 100%; padding: 15px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #444; 
             background-color: var(--bg-color); color: var(--text-color); font-size: 16px; 
+            color-scheme: dark;
         }
+        .light-theme select, .light-theme input { color-scheme: light; }
         
         /* Optgroup styling for dropdowns */
         optgroup { color: var(--text-muted); font-weight: bold; font-style: normal; }
@@ -194,16 +196,24 @@
     <!-- SETTINGS / DATA VIEW -->
     <div id="view-settings" class="view">
         <div class="card">
+            <h2>Generate Report</h2>
+            <button class="action-btn" onclick="generatePDF()">Download PDF Report</button>
+        </div>
+        <div class="card">
             <h2>Data Management</h2>
             <p style="font-size: 12px; margin-bottom: 10px;">App will auto-backup to JSON once per day when opened.</p>
-            <button class="action-btn" onclick="exportBackup(false)">Manual Backup (JSON)</button>
+            <button class="action-btn secondary-btn" onclick="exportBackup(false)">Manual Backup (JSON)</button>
             <br><br>
             <label>Restore Backup (JSON)</label>
             <input type="file" id="import-file" accept=".json" onchange="importBackup(event)">
         </div>
+        
+        <!-- NEW: DELETE DATA BY DATE -->
         <div class="card">
-            <h2>Generate Report</h2>
-            <button class="action-btn secondary-btn" onclick="generatePDF()">Download PDF Report</button>
+            <h2>Delete Data by Date</h2>
+            <p style="font-size: 12px; margin-bottom: 10px; color: var(--danger);">Warning: This will permanently erase all workouts, meals, weights, and sessions for the chosen day.</p>
+            <input type="date" id="delete-date-input">
+            <button class="action-btn secondary-btn" style="background-color: var(--danger);" onclick="deleteDataByDate()">Erase Data for this Date</button>
         </div>
     </div>
 
@@ -301,6 +311,51 @@
                         };
                     }
                 } else alert("No entries found in this category to delete.");
+            };
+        }
+
+        // --- NEW: DELETE DATA BY DATE ---
+        function deleteDataByDate() {
+            const dateInput = document.getElementById('delete-date-input').value;
+            if (!dateInput) return alert("Please select a date first.");
+            
+            if (!confirm(`Are you absolutely sure you want to delete ALL data (workouts, meals, weight, sessions) for ${dateInput}? This cannot be undone.`)) {
+                return;
+            }
+
+            const storeNames = ['workouts', 'weightLogs', 'mealLogs', 'sessions'];
+            const tx = db.transaction(storeNames, "readwrite");
+            let deletedCount = 0;
+
+            storeNames.forEach(storeName => {
+                const store = tx.objectStore(storeName);
+                const req = store.openCursor();
+                req.onsuccess = function(e) {
+                    const cursor = e.target.result;
+                    if (cursor) {
+                        // Extract local YYYY-MM-DD from the saved ISO string
+                        const d = new Date(cursor.value.date);
+                        const yyyy = d.getFullYear();
+                        const mm = String(d.getMonth() + 1).padStart(2, '0');
+                        const dd = String(d.getDate()).padStart(2, '0');
+                        const localDateStr = `${yyyy}-${mm}-${dd}`;
+                        
+                        if (localDateStr === dateInput) {
+                            cursor.delete();
+                            deletedCount++;
+                        }
+                        cursor.continue();
+                    }
+                };
+            });
+
+            tx.oncomplete = () => {
+                if (deletedCount > 0) {
+                    alert(`Successfully erased ${deletedCount} records for ${dateInput}.`);
+                    initDashboard(); 
+                } else {
+                    alert(`No records found for ${dateInput}.`);
+                }
             };
         }
 
@@ -595,7 +650,14 @@
                 }
             });
 
-            doc.save("Fitness_Report.pdf");
+            // Create Dynamic Filename: dd-mm-yy Fitness Report.pdf
+            const today = new Date();
+            const dd = String(today.getDate()).padStart(2, '0');
+            const mm = String(today.getMonth() + 1).padStart(2, '0');
+            const yy = String(today.getFullYear()).slice(-2);
+            const fileName = `${dd}-${mm}-${yy} Fitness Report.pdf`;
+
+            doc.save(fileName);
         }
     </script>
     <script>
