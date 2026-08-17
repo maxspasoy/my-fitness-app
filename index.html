@@ -121,18 +121,21 @@
                 <option value="Elliptical">Elliptical</option>
             </select>
             
-            <!-- NEW: Dynamic Cardio Fields -->
+            <!-- Dynamic Cardio Fields -->
             <div id="cardio-dynamic-fields" style="display:flex; gap: 10px; margin-bottom: 5px;">
                 <div id="field-incline" style="flex:1;">
                     <label>Incline</label>
                     <select id="cardio-incline">
                         <option value="">None</option>
-                        <!-- Populated by JS -->
                     </select>
                 </div>
                 <div id="field-speed" style="flex:1;">
                     <label>Speed (km/h)</label>
                     <input type="number" id="cardio-speed" step="0.01" placeholder="e.g. 4.44">
+                </div>
+                <div id="field-level" style="flex:1; display:none;">
+                    <label>Level</label>
+                    <input type="number" id="cardio-level" placeholder="e.g. 5">
                 </div>
                 <div id="field-resistance" style="flex:1; display:none;">
                     <label>Resistance</label>
@@ -155,7 +158,8 @@
                 </label>
             </div>
             
-            <button class="action-btn" onclick="logExercise('cardio')" style="margin-top: 15px;">Log Cardio</button>
+            <input type="text" id="cardio-notes" placeholder="Notes (Optional)">
+            <button class="action-btn" onclick="logExercise('cardio')" style="margin-top: 5px;">Log Cardio</button>
         </div>
 
         <div class="card">
@@ -183,6 +187,8 @@
             </div>
             <label>Weight (kg) - Leave blank for bodyweight</label>
             <input type="number" id="weight" placeholder="e.g. 40">
+            
+            <input type="text" id="strength-notes" placeholder="Notes (Optional)">
             <button class="action-btn" onclick="logExercise('strength')">Log Set</button>
         </div>
         
@@ -304,17 +310,19 @@
             const machine = document.getElementById('cardio-machine').value;
             const fieldIncline = document.getElementById('field-incline');
             const fieldSpeed = document.getElementById('field-speed');
+            const fieldLevel = document.getElementById('field-level');
             const fieldResistance = document.getElementById('field-resistance');
 
             fieldIncline.style.display = 'none';
             fieldSpeed.style.display = 'none';
+            fieldLevel.style.display = 'none';
             fieldResistance.style.display = 'none';
 
             if (machine === 'Treadmill Walking') {
                 fieldIncline.style.display = 'block';
                 fieldSpeed.style.display = 'block';
             } else if (machine === 'Elliptical') {
-                fieldSpeed.style.display = 'block';
+                fieldLevel.style.display = 'block';
             } else if (machine === 'Stairmaster') {
                 fieldResistance.style.display = 'block';
             }
@@ -456,7 +464,6 @@
                 cardioSelect.innerHTML += `<option value="Stairmaster">Stairmaster (Unlocked!)</option>`;
             }
 
-            // Populate Incline Dropdown (1% to 40%)
             const inclineSelect = document.getElementById('cardio-incline');
             if(inclineSelect.options.length <= 1) {
                 for(let i=1; i<=40; i++) {
@@ -503,16 +510,18 @@
                 data.machine = document.getElementById('cardio-machine').value;
                 data.minutes = document.getElementById('cardio-minutes').value;
                 data.intervals = document.getElementById('do-intervals').checked;
+                data.notes = document.getElementById('cardio-notes').value;
 
-                // Grab specific extra fields based on machine
                 if (data.machine === 'Treadmill Walking') {
                     data.incline = document.getElementById('cardio-incline').value;
                     data.speed = document.getElementById('cardio-speed').value;
                 } else if (data.machine === 'Elliptical') {
-                    data.speed = document.getElementById('cardio-speed').value;
+                    data.level = document.getElementById('cardio-level').value;
                 } else if (data.machine === 'Stairmaster') {
                     data.resistance = document.getElementById('cardio-resistance').value;
                 }
+                
+                document.getElementById('cardio-notes').value = '';
 
             } else {
                 const selectVal = document.getElementById('strength-machine').value;
@@ -522,8 +531,10 @@
                 data.reps = repVal === "Custom" ? document.getElementById('custom-reps').value : repVal;
                 data.sets = document.getElementById('sets').value;
                 data.weight = document.getElementById('weight').value || "Bodyweight";
+                data.notes = document.getElementById('strength-notes').value;
                 
                 if (repVal === "Custom" && !data.reps) return alert("Please enter the number of custom reps.");
+                document.getElementById('strength-notes').value = '';
             }
             saveToDB('workouts', data);
         }
@@ -531,12 +542,18 @@
         function leaveGym() {
             const activeStart = localStorage.getItem('sessionStart');
             if (!activeStart) return switchTab('home');
+            
             const startMs = parseInt(activeStart);
             const endMs = Date.now();
-            const diffMinutes = Math.round((endMs - startMs) / 60000);
-            saveToDB('sessions', { durationMinutes: diffMinutes, startTime: new Date(startMs).toISOString(), endTime: new Date(endMs).toISOString() });
+            let diffMinutes = Math.round((endMs - startMs) / 60000);
+            
+            let userMinutes = prompt("You spent " + diffMinutes + " minutes at the gym. Edit this number if you need to adjust your time:", diffMinutes);
+            if (userMinutes === null) return; // Cancelled
+            userMinutes = parseInt(userMinutes) || diffMinutes; // Default to calculated if they input gibberish
+
+            saveToDB('sessions', { durationMinutes: userMinutes, startTime: new Date(startMs).toISOString(), endTime: new Date(endMs).toISOString() });
             localStorage.removeItem('sessionStart');
-            alert(`Workout Complete! You spent ${diffMinutes} minutes at the gym today. Great job!`);
+            alert(`Workout Complete! You saved ${userMinutes} minutes for today's session. Great job!`);
             switchTab('home');
         }
 
@@ -750,14 +767,19 @@
                             let extras = [];
                             if (w.incline) extras.push(`Inc: ${w.incline}%`);
                             if (w.speed) extras.push(`Spd: ${w.speed} km/h`);
+                            if (w.level) extras.push(`Lvl: ${w.level}`);
                             if (w.resistance) extras.push(`Res: ${w.resistance}`);
+                            if (w.notes) extras.push(`Notes: ${w.notes}`);
                             
                             if (extras.length > 0) {
                                 details += ` (${extras.join(', ')})`;
                             }
                             return [formatTime(w.date), w.machine, `${w.minutes} mins`, details];
                         }
-                        return [formatTime(w.date), w.exercise, `${w.sets}x${w.reps}`, `${w.weight} kg`];
+                        
+                        let strDetails = `${w.weight} kg`;
+                        if (w.notes) strDetails += ` (Notes: ${w.notes})`;
+                        return [formatTime(w.date), w.exercise, `${w.sets}x${w.reps}`, strDetails];
                     });
                     doc.autoTable({ startY: finalY + 5, head: [['Time', 'Activity', 'Volume', 'Details']], body: workoutRows, theme: 'striped', headStyles: { fillColor: [50, 50, 50] } });
                     finalY = doc.lastAutoTable.finalY + 15;
